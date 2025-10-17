@@ -5,14 +5,6 @@ from aiida.cmdline.params import arguments, types
 import click
 import numpy as np
 
-try:
-    import matplotlib
-    import matplotlib.pyplot as plt
-    from scipy.optimize import curve_fit
-except ImportError as e:
-    print('Please install the package with [plotting] extras to use this command.')
-    sys.exit(1)
-
 from . import cmd_data
 
 
@@ -41,50 +33,52 @@ def plot_viscosity(
         show_plot: bool = False,
     ):
     """Plot viscosity data and fit to the Eyring model."""
-    print(data)
+    from aitw_aiida_viscosity.viscosity import eyring_viscosity, fit_viscosity_eyring
+
+    try:
+        import matplotlib
+        import matplotlib.pyplot as plt
+    except ImportError as e:
+        click.echo('Please install the package with [plotting] extras to use this command.')
+        sys.exit(1)
+
     shear_rates = data.get_array('shear_rates')
     viscosities = data.get_array('viscosities')
 
-
-    def eyring_viscosity(gamma_dot, eta_N, sigma_E):
-        tau = eta_N / sigma_E
-        return (eta_N / (tau * gamma_dot)) * np.log(tau * gamma_dot + np.sqrt((tau * gamma_dot)**2 + 1))
-
-    fit_successful = True
-    eta_N, sigma_E = None, None
-
-    eta_N_guess = np.median(viscosities)
-    sigma_E_guess = 1e8
-    p0 = [eta_N_guess, sigma_E_guess]
-
-    try:
-        popt, pcov = curve_fit(
-            eyring_viscosity,
-            shear_rates,
-            viscosities,
-            p0=p0,
-            maxfev=10000  # Increase max number of function evaluations just in case
-        )
-        eta_N, sigma_E = popt
-        click.echo(f"Fit successful: ")
-        for var, value in [('eta_N', eta_N), ('sigma_E', sigma_E)]:
-            click.echo(f'{var:>20s} = {value:13.6e}')
-    except Exception as e:
-        fit_successful = False
-        click.echo(f"Curve fitting failed: {e}")
+    sucess, eta_N, sigma_E = fit_viscosity_eyring(shear_rates, viscosities)
+    if not sucess:
+        click.echo('Curve fitting failed.')
         sys.exit(1)
+    click.echo(f"Fit successful: ")
+    for var, value in [('eta_N', eta_N), ('sigma_E', sigma_E)]:
+        click.echo(f'{var:>20s} = {value:13.6e}')
+
+    if show_plot:
+        messages = []
+        for backend in ['Qt5Agg', 'TkAgg']:
+            try:
+                matplotlib.use(backend)
+            except Exception as e:
+                messages.append(f"Could not use matplotlib backend '{backend}': {e}")
+                continue
+            else:
+                break
+        else:
+            for msg in messages:
+                click.echo(msg)
+            click.echo('Could not set a suitable matplotlib backend to show the plot.')
+            show_plot = False
 
     # Create plot
     fig, ax = plt.subplots()
     ax.loglog(shear_rates, viscosities, 'o', label='MD Data')
 
-    if fit_successful:
-        shear_rates_fit = np.logspace(np.log10(min(shear_rates)), np.log10(max(shear_rates)), 200)
-        ax.loglog(
-            shear_rates_fit,
-            eyring_viscosity(shear_rates_fit, eta_N, sigma_E),
-            '-', label=f'Fit: $\\eta_N$={eta_N:.2f} mPa·s, $\\sigma_E$={sigma_E:.2e} s'
-        )
+    shear_rates_fit = np.logspace(np.log10(min(shear_rates)), np.log10(max(shear_rates)), 200)
+    ax.loglog(
+        shear_rates_fit,
+        eyring_viscosity(shear_rates_fit, eta_N, sigma_E),
+        '-', label=f'Fit: $\\eta_N$={eta_N:.2f} mPa·s, $\\sigma_E$={sigma_E:.2e} s'
+    )
 
     ax.set_xlabel('Shear Rate (1/s)')
     ax.set_ylabel('Viscosity (mPa·s)')
@@ -97,18 +91,4 @@ def plot_viscosity(
     click.echo(f"Plot saved locally as '{output_file}'.")
 
     if show_plot:
-        for backend in ['TkAgg', 'Qt5Agg']:
-            messages = []
-            try:
-                matplotlib.use(backend)
-            except Exception as e:
-                messages.append(f"Could not use matplotlib backend '{backend}': {e}")
-                continue
-            else:
-                break
-        else:
-            for msg in messages:
-                click.echo(msg)
-            click.echo('Could not set a suitable matplotlib backend to show the plot.')
-            return
         plt.show()

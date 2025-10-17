@@ -26,9 +26,10 @@ classifiers = [
 keywords = ['aiida', 'workflows']
 requires-python = '>=3.9'
 dependencies = [
-    'aiida-core>=2',
+    'aiida-core>=2.5.1',
     'aiida-shell',
     'numpy',
+    'scipy',
 
     'rdkit',
     # Provided as CODE entities
@@ -45,28 +46,17 @@ Source = 'https://github.com/AI-TranspWood/Molecular-liquid-shear-viscosity'
 [project.optional-dependencies]
 plotting = [
     'matplotlib',
-    'scipy',
     'PyQt5',
 ]
 pre-commit = [
     'pre-commit',
-    'pylint',
-    'pylint-aiida~=0.1.1',
 ]
-
+tui = [
+    'trogon',
+]
 
 [project.scripts]
 aitw-viscosity = 'aitw_aiida_viscosity.cli:cmd_root'
-
-[project.entry-points.'aiida.calculations']
-
-[project.entry-points.'aiida.data']
-
-[project.entry-points.'aiida.parsers']
-
-[project.entry-points.'aiida.tools.calculations']
-
-[project.entry-points.'aiida.tools.data.orbitals']
 
 [project.entry-points.'aiida.workflows']
 'aitw.gromacs.viscosity' = 'aitw_aiida_viscosity.workflows:MonomerWorkChain'
@@ -89,21 +79,3 @@ force_sort_within_sections = true
 include_trailing_comma = true
 line_length = 120
 multi_line_output = 3  # this configuration is compatible with yapf
-
-[tool.pylint.master]
-load-plugins = ['pylint_aiida']
-
-[tool.pylint.format]
-max-line-length = 120
-
-[tool.pylint.tool-check]
-generated-members = 'self.exit_codes.*'
-
-[tool.pylint.messages_control]
-disable = [
-]
-
-[tool.pylint.basic]
-good-names = [
-    'i', 'j', 'k',
-]

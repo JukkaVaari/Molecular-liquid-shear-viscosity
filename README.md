@@ -15,10 +15,13 @@ AiiDA workflow for automated calculation of shear viscosity of a molecular liqui
 
 ```bash
 cd <PATH to folder with pyproject.toml>
-pip install .[plotting]
+pip install .[plotting,tui]
 ```
 
-**NOTE**: The plotting extra deps are needed to perform the plotting of the results.
+The extra dependencies are optional and used for:
+
+- `plotting`: for plotting the results of the viscosity calculation.
+- `tui`: for adding an `aitw-viscosity tui` subcommand launching a text user interface (TUI) to help setting up the workchain inputs.
 
 ## Usage
 
@@ -62,22 +65,24 @@ OUTPUT:
 # ...
 # Output link               Node pk and type
 # ------------------------------------------------------------
-# acpype__gro               SinglefileData<6905>
-# acpype__itp               SinglefileData<6908>
-# acpype__pdb               SinglefileData<6914>
-# acpype__top               SinglefileData<6911>
-# equilibrated_box_length_nm Float<6978>
-# equilibrated_gro          SinglefileData<6975>
-# nemd__edr_0_002           SinglefileData<7061>
-# nemd__edr_0_005           SinglefileData<7054>
-# nemd__edr_0_01            SinglefileData<7082>
-# nemd__edr_0_02            SinglefileData<7075>
-# nemd__edr_0_05            SinglefileData<7068>
-# nemd__edr_0_1             SinglefileData<7089>
-# nemd__edr_0_2             SinglefileData<7096>
-# system_gro                SinglefileData<6941>
-# viscosity_data            ArrayData<7171>
-# xyz                       SinglefileData<6920>
+# acpype__gro               SinglefileData<9308>
+# acpype__itp               SinglefileData<9311>
+# acpype__pdb               SinglefileData<9317>
+# acpype__top               SinglefileData<9314>
+# equilibrated_box_length_nm Float<9381>
+# equilibrated_gro          SinglefileData<9378>
+# eta_N                     Float<9563>
+# nemd__edr_0_002           SinglefileData<9451>
+# nemd__edr_0_005           SinglefileData<9444>
+# nemd__edr_0_01            SinglefileData<9472>
+# nemd__edr_0_02            SinglefileData<9465>
+# nemd__edr_0_05            SinglefileData<9458>
+# nemd__edr_0_1             SinglefileData<9479>
+# nemd__edr_0_2             SinglefileData<9486>
+# sigma_E                   Float<9564>
+# system_gro                SinglefileData<9344>
+# viscosity_data            ArrayData<9561>
+# xyz                       SinglefileData<9323>
 ```
 
 Plotting the results
@@ -86,7 +91,8 @@ Plotting the results
 aitw-viscosity data plot-viscosity 7171 --show-plot
 ```
 
-Replace the PK of the viscosity `ArrayData` with the actual PK from your run.
+Replace the PK of the viscosity `ArrayData` with the actual PK from your run.\
+Use `--help` to see all the available options.
 
 **NOTE**: Note all possible inputs to the workchain are exposed through the CLI. For more advanced usage, consider running the workchain programmatically.
 

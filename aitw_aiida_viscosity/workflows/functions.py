@@ -7,6 +7,8 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import rdMolDescriptors
 
+from ..viscosity import fit_viscosity_eyring
+
 
 def string_safe_float(value: float) -> str:
     """Convert a float to an aiida-context safe string"""
@@ -255,18 +257,12 @@ def generate_gromacs_equilibration_input(
 
     return orm.SinglefileData.from_string(template, filename='equilibrate.mdp')
 
-@calcfunction
-def generate_gromacs_shear_rate_input(
-        nsteps: orm.Int,
-        time_step: orm.Float,
-        ref_t: orm.Float,
-        shear_rate: orm.Float,
-    ):
+def _generate_gromacs_deform_vel_input(nsteps: int, time_step: float, ref_t: float, deform_vel: float):
     """Generate a basic GROMACS shear rate input file."""
     template = '\n'.join([
         'integrator          = md',
-        f'nsteps              = {nsteps.value}',
-        f'dt                  = {time_step.value}',
+        f'nsteps              = {nsteps}',
+        f'dt                  = {time_step}',
         'nstxout-compressed  = 3000000',
         'nstvout             = 0',
         'nstlog              = 1000',
@@ -288,17 +284,38 @@ def generate_gromacs_shear_rate_input(
         'rcoulomb            = 1.0',
         'DispCorr            = EnerPres',
 
-        f'ref_t               = {ref_t.value}',
+        f'ref_t               = {ref_t}',
         'Tcoupl              = v-rescale',
         'tc-grps             = system',
         'tau_t               = 1.0',
         'Pcoupl              = no',
 
-        f'deform              = 0.0 0.0 0.0 {shear_rate.value} 0.0 0.0',
+        f'deform              = 0.0 0.0 0.0 {deform_vel} 0.0 0.0',
         'deform-init-flow    = yes',
     ])
 
-    return orm.SinglefileData.from_string(template, filename='aiida.mdp')
+    return template
+
+@calcfunction
+def generate_gromacs_deform_vel_inputs(
+        nsteps: orm.Int,
+        time_step: orm.Float,
+        ref_t: orm.Float,
+        deform_velocities: orm.List,
+    ) -> dict[str, orm.SinglefileData]:
+    """Generate a basic GROMACS shear rate input file."""
+    res = {}
+    for defvel in deform_velocities:
+        str_defvel = string_safe_float(defvel)
+        template = _generate_gromacs_deform_vel_input(
+            nsteps=nsteps.value,
+            time_step=time_step.value,
+            ref_t=ref_t.value,
+            deform_vel=defvel,
+        )
+        res[f'mdp_{str_defvel}'] = orm.SinglefileData.from_string(template, filename='aiida.mdp')
+
+    return res
 
 @calcfunction
 def extract_deformation_velocities(mdp_files):
@@ -329,21 +346,21 @@ def extract_pressure_from_xvg(xvg_file: orm.SinglefileData) -> orm.List:
     """Extract pressure values from a GROMACS .xvg file."""
     with xvg_file.open() as file_handle:
         data = np.loadtxt(file_handle, comments=['@', '#'])
-    avg_pressure = -np.mean(data[:, 1])  # Convert to a positive value
+    avg_pressure = - np.mean(data[:, 1])  # Convert to a positive value
     return orm.Float(avg_pressure)
 
 @calcfunction
 def join_pressure_results(
-        shear_rates: orm.List,
+        deform_vel: orm.List,
         **pressure_results,
     ) -> orm.List:
     """Join pressure results from multiple calculations into a single list."""
     pressures = []
-    for srate in shear_rates:
-        str_srate = string_safe_float(srate)
-        pressure = pressure_results.get(f'pressure_{str_srate}', None)
+    for defvel in deform_vel:
+        str_defvel = string_safe_float(defvel)
+        pressure = pressure_results.get(f'pressure_{str_defvel}', None)
         if pressure is None:
-            raise ValueError(f"Missing pressure result for shear rate {srate}!")
+            raise ValueError(f"Missing pressure result for deformation velocity {defvel}!")
         pressures.append(pressure.value)
 
     return orm.List(list=pressures)
@@ -357,6 +374,7 @@ def compute_viscosities(
     """Compute shear rates from deformation velocities and box length."""
     box_length_nm = box_length.value
 
+    deform_vel = []
     shear_rates = []
     viscosities = []
 
@@ -366,12 +384,42 @@ def compute_viscosities(
         viscosity_Pa_s = pressure_Pa / shear_rate  # [Pa.s]
         viscosity_mPa_s = viscosity_Pa_s * 1000  # [mPa.s]
 
+        deform_vel.append(deform_vel_nm_per_ps)
         shear_rates.append(shear_rate)
         viscosities.append(viscosity_mPa_s)
 
+    # Ensure arrays are sorted by increasing deformation velocity
+    order_args = np.argsort(deform_vel)
+
+    def_vels = np.array(deform_vel)[order_args]
+    srate_array = np.array(shear_rates)[order_args]
+    visc_array = np.array(viscosities)[order_args]
+    pressures_array = np.array(pressures.get_list())[order_args]
+
     array = orm.ArrayData()
-    array.set_array('pressure_averages', np.array(pressures.get_list()))
-    array.set_array('shear_rates', np.array(shear_rates))
-    array.set_array('viscosities', np.array(viscosities))
+    array.set_array('deformation_velocities', def_vels)
+    array.set_array('pressure_averages', pressures_array)
+    array.set_array('shear_rates', srate_array)
+    array.set_array('viscosities', visc_array)
 
     return array
+
+@calcfunction
+def fit_viscosity(
+        viscosity_data: orm.ArrayData,
+    ) -> dict[str, orm.Float]:
+    """Fit viscosity data to the Eyring model."""
+    shear_rates = viscosity_data.get_array('shear_rates')
+    viscosities = viscosity_data.get_array('viscosities')
+
+    success, eta_N, sigma_E = fit_viscosity_eyring(shear_rates, viscosities)
+
+    if not success:
+        raise ValueError('Curve fitting to the Eyring model failed!')
+
+    res = {
+        'eta_N': orm.Float(eta_N),
+        'sigma_E': orm.Float(sigma_E),
+    }
+
+    return res
